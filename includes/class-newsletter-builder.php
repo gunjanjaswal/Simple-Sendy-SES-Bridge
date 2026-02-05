@@ -15,6 +15,7 @@ class SSSB_Newsletter_Builder
         add_action('admin_menu', array($this, 'add_submenu'));
         add_action('wp_ajax_sssb_search_posts', array($this, 'ajax_search_posts'));
         add_action('wp_ajax_sssb_create_campaign', array($this, 'ajax_create_campaign'));
+        add_action('wp_ajax_sssb_send_test_email', array($this, 'ajax_send_test_email'));
     }
 
     public function add_submenu()
@@ -92,13 +93,9 @@ class SSSB_Newsletter_Builder
                         <div id="sssb-banner-preview" style="margin-top:10px; max-width:100%;"></div>
                         </p>
                         <p>
-                            <label><strong><?php esc_html_e('Layout Style', 'simple-sendy-ses-bridge'); ?></strong></label><br>
-                            <label><input type="radio" name="sssb_layout" value="list" checked>
-                                <?php esc_html_e('Simple List', 'simple-sendy-ses-bridge'); ?></label><br>
-                            <label><input type="radio" name="sssb_layout" value="grid">
-                                <?php esc_html_e('Grid (2 Columns)', 'simple-sendy-ses-bridge'); ?></label><br>
-                            <label><input type="radio" name="sssb_layout" value="full">
-                                <?php esc_html_e('Full Content', 'simple-sendy-ses-bridge'); ?></label>
+                            <!-- Custom Template Enforced -->
+                             <input type="hidden" name="sssb_layout" value="custom">
+                             <span class="description"><?php esc_html_e('Using Custom Template (Hero + Grid)', 'simple-sendy-ses-bridge'); ?></span>
                         </p>
                     </div>
 
@@ -128,7 +125,35 @@ class SSSB_Newsletter_Builder
                         </label><br>
                         <label><input type="radio" name="sssb_send_type" value="send">
                             <?php esc_html_e('Send Immediately', 'simple-sendy-ses-bridge'); ?>
-                        </label><br><br>
+                        </label><br>
+                        <label><input type="radio" name="sssb_send_type" value="schedule">
+                            <?php esc_html_e('Schedule', 'simple-sendy-ses-bridge'); ?>
+                        </label>
+                        
+                        <div id="sssb-schedule-options" style="display:none; margin-top: 10px; padding-left: 20px;">
+                            <label><?php esc_html_e('Send Date/Time', 'simple-sendy-ses-bridge'); ?></label><br>
+                            <input type="datetime-local" id="sssb-schedule-datetime" class="regular-text">
+                            
+                            <?php
+                            $timezone = get_option('timezone_string');
+                            if (!$timezone) {
+                                $timezone = 'UTC ' . get_option('gmt_offset');
+                            }
+                            ?>
+                            <p class="description">
+                                <?php
+                                /* translators: %s: Current server time */
+                                echo esc_html(sprintf(__('Current Server Time: %s', 'simple-sendy-ses-bridge'), current_time('mysql')));
+                                ?>
+                                <br>
+                                <?php
+                                /* translators: %s: Timezone */
+                                echo esc_html(sprintf(__('Timezone: %s', 'simple-sendy-ses-bridge'), $timezone));
+                                ?>
+                            </p>
+                        </div>
+                        
+                        <br><br>
                         <button id="sssb-create-campaign" class="button button-primary large">
                             <?php esc_html_e('Create Campaign', 'simple-sendy-ses-bridge'); ?>
                         </button>
@@ -137,9 +162,8 @@ class SSSB_Newsletter_Builder
                     <div class="sssb-card">
                         <h3><?php esc_html_e('Support & Contact', 'simple-sendy-ses-bridge'); ?></h3>
                         <p>
-                            <a href="https://buymeacoffee.com/gunjanjaswal" target="_blank">
-                                <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee"
-                                    style="height: 40px !important; width: auto !important;">
+                            <a href="https://buymeacoffee.com/gunjanjaswal" target="_blank" class="button button-default">
+                                <?php esc_html_e('☕ Buy Me A Coffee', 'simple-sendy-ses-bridge'); ?>
                             </a>
                         </p>
                         <p style="margin-top:15px;">
@@ -153,6 +177,17 @@ class SSSB_Newsletter_Builder
 
                 <!-- Right Column: Preview -->
                 <div class="sssb-col-right">
+                    <div class="sssb-card">
+                        <h2>
+                            <?php esc_html_e('Send Test Email', 'simple-sendy-ses-bridge'); ?>
+                        </h2>
+                        <p>
+                            <?php esc_html_e('Send a test to see how it looks.', 'simple-sendy-ses-bridge'); ?>
+                        </p>
+                        <input type="email" id="sssb-test-email" class="widefat" placeholder="Enter email address" style="margin-bottom: 10px;">
+                        <button id="sssb-send-test" class="button button-secondary"><?php esc_html_e('Send Test', 'simple-sendy-ses-bridge'); ?></button>
+                    </div>
+
                     <div class="sssb-card">
                         <h2>
                             <?php esc_html_e('Email Preview', 'simple-sendy-ses-bridge'); ?>
@@ -177,14 +212,17 @@ class SSSB_Newsletter_Builder
             wp_send_json_error('Permission denied');
         }
 
-        $query = isset($_POST['query']) ? sanitize_text_field($_POST['query']) : '';
+        $query = isset($_POST['query']) ? sanitize_text_field(wp_unslash($_POST['query'])) : '';
 
         $args = array(
             'post_type' => 'post',
             'post_status' => 'publish',
-            's' => $query,
             'posts_per_page' => 10,
         );
+
+        if (!empty($query)) {
+            $args['s'] = $query;
+        }
 
         $posts = get_posts($args);
         $data = array();
@@ -217,26 +255,131 @@ class SSSB_Newsletter_Builder
             wp_send_json_error('Permission denied');
         }
 
-        $campaign_data = $_POST['campaign']; // Basic sanitization needed, but HTML allows for email content
+        if (!isset($_POST['campaign'])) {
+            wp_send_json_error('No campaign data received');
+        }
 
-        // Prepare args for API
-        $args = array(
-            'from_name' => sanitize_text_field($campaign_data['from_name']),
-            'from_email' => sanitize_email($campaign_data['from_email']),
-            'subject' => sanitize_text_field($campaign_data['subject']),
-            'html_text' => wp_kses_post($campaign_data['html_text']), // Use wp_kses_post to allow safe HTML
-            'plain_text' => sanitize_textarea_field($campaign_data['plain_text']),
-            'list_ids' => sanitize_text_field($campaign_data['list_id']),
-            'send_campaign' => ($campaign_data['send_type'] === 'send') ? 1 : 0
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $campaign_data = wp_unslash($_POST['campaign']);
+
+        // Create Campaign Post
+        $post_args = array(
+            'post_type'    => 'sssb_campaign',
+            'post_title'   => sanitize_text_field($campaign_data['subject']),
+            'post_content' => wp_kses_post($campaign_data['html_text']),
+            'post_status'  => 'publish',
         );
 
-        $sendy_api = new SSSB_Sendy_API();
-        $result = $sendy_api->create_campaign($args);
+        $post_id = wp_insert_post($post_args);
 
-        if (is_wp_error($result)) {
-            wp_send_json_error(array('message' => $result->get_error_message()));
+        if (is_wp_error($post_id)) {
+            wp_send_json_error(array('message' => 'Could not save campaign locally: ' . $post_id->get_error_message()));
+        }
+
+        // Save Meta
+        update_post_meta($post_id, '_sssb_from_name', sanitize_text_field($campaign_data['from_name']));
+        update_post_meta($post_id, '_sssb_from_email', sanitize_email($campaign_data['from_email']));
+        update_post_meta($post_id, '_sssb_plain_text', sanitize_textarea_field($campaign_data['plain_text']));
+        update_post_meta($post_id, '_sssb_list_id', sanitize_text_field($campaign_data['list_id']));
+        
+        $send_type = $campaign_data['send_type'];
+
+        if ($send_type === 'schedule') {
+             $schedule_date = sanitize_text_field($campaign_data['schedule_date']);
+             $timestamp = strtotime($schedule_date);
+
+             if (!$timestamp || $timestamp <= current_time('timestamp')) {
+                 wp_send_json_error(array('message' => 'Invalid or past date for scheduling.'));
+             }
+
+             wp_schedule_single_event($timestamp, 'sssb_send_scheduled_campaign', array($post_id));
+             
+             update_post_meta($post_id, '_sssb_status', 'scheduled');
+             update_post_meta($post_id, '_sssb_scheduled_time', $schedule_date);
+             
+             wp_send_json_success(array('message' => 'Campaign scheduled successfully for ' . $schedule_date));
+
+        } elseif ($send_type === 'send') {
+            
+            update_post_meta($post_id, '_sssb_status', 'sending');
+
+            $api_args = array(
+                'from_name' => sanitize_text_field($campaign_data['from_name']),
+                'from_email' => sanitize_email($campaign_data['from_email']),
+                'subject' => sanitize_text_field($campaign_data['subject']),
+                'html_text' => wp_kses_post($campaign_data['html_text']), 
+                'plain_text' => sanitize_textarea_field($campaign_data['plain_text']),
+                'list_ids' => sanitize_text_field($campaign_data['list_id']),
+                'send_campaign' => 1
+            );
+    
+            $sendy_api = new SSSB_Sendy_API();
+            $result = $sendy_api->create_campaign($api_args);
+    
+            if (is_wp_error($result)) {
+                update_post_meta($post_id, '_sssb_status', 'failed');
+                update_post_meta($post_id, '_sssb_error', $result->get_error_message());
+                wp_send_json_error(array('message' => $result->get_error_message()));
+            } else {
+                update_post_meta($post_id, '_sssb_status', 'sent');
+                update_post_meta($post_id, '_sssb_sent_time', current_time('mysql'));
+                wp_send_json_success(array('message' => 'Campaign created and sent successfully!'));
+            }
+
         } else {
-            wp_send_json_success(array('message' => 'Campaign created successfully!'));
+            // Draft
+            update_post_meta($post_id, '_sssb_status', 'draft');
+            
+             $api_args = array(
+                'from_name' => sanitize_text_field($campaign_data['from_name']),
+                'from_email' => sanitize_email($campaign_data['from_email']),
+                'subject' => sanitize_text_field($campaign_data['subject']),
+                'html_text' => wp_kses_post($campaign_data['html_text']), 
+                'plain_text' => sanitize_textarea_field($campaign_data['plain_text']),
+                'list_ids' => sanitize_text_field($campaign_data['list_id']),
+                'send_campaign' => 0
+            );
+
+            $sendy_api = new SSSB_Sendy_API();
+            $result = $sendy_api->create_campaign($api_args);
+
+            if (is_wp_error($result)) {
+                 wp_send_json_error(array('message' => $result->get_error_message()));
+            } else {
+                 wp_send_json_success(array('message' => 'Campaign saved as draft in Sendy!'));
+            }
+        }
+    }
+
+    public function ajax_send_test_email()
+    {
+        check_ajax_referer('sssb_newsletter_nonce', 'nonce');
+
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error('Permission denied');
+        }
+
+        $email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+        $html_content = isset($_POST['html']) ? wp_kses_post(wp_unslash($_POST['html'])) : '';
+        $subject = isset($_POST['subject']) ? sanitize_text_field(wp_unslash($_POST['subject'])) : 'Test Newsletter';
+
+        if (!is_email($email)) {
+            wp_send_json_error(array('message' => 'Invalid email address.'));
+        }
+
+        if (empty($html_content)) {
+            wp_send_json_error(array('message' => 'No content to send.'));
+        }
+
+        // Set content type to HTML
+        $headers = array('Content-Type: text/html; charset=UTF-8');
+
+        $result = wp_mail($email, '[TEST] ' . $subject, $html_content, $headers);
+
+        if ($result) {
+            wp_send_json_success(array('message' => 'Test email sent to ' . $email));
+        } else {
+            wp_send_json_error(array('message' => 'Failed to send email. Check your WordPress mail settings.'));
         }
     }
 }
