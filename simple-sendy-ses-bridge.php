@@ -91,6 +91,8 @@ class SSSB_Core
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         add_action('init', array($this, 'register_post_type'));
         add_action('sssb_send_scheduled_campaign', array($this, 'send_scheduled_campaign'));
+        add_action('admin_notices', array($this, 'check_overdue_campaigns'));
+        add_action('admin_init', array($this, 'handle_manual_send'));
     }
 
     /**
@@ -125,6 +127,7 @@ class SSSB_Core
     public function add_campaign_columns($columns) {
         $columns['sssb_status'] = __('Status', 'simple-sendy-ses-bridge');
         $columns['sssb_scheduled'] = __('Scheduled For', 'simple-sendy-ses-bridge');
+        $columns['sssb_error'] = __('Error', 'simple-sendy-ses-bridge');
         return $columns;
     }
 
@@ -149,6 +152,15 @@ class SSSB_Core
                     echo '-';
                 }
                 break;
+
+            case 'sssb_error':
+                $error = get_post_meta($post_id, '_sssb_send_error', true);
+                if ($error) {
+                    echo '<span style="color: #d63638;">' . esc_html($error) . '</span>';
+                } else {
+                    echo '-';
+                }
+                break;
         }
     }
 
@@ -165,6 +177,7 @@ class SSSB_Core
         $campaign_data = array(
             'from_name' => get_post_meta($post_id, '_sssb_from_name', true),
             'from_email' => get_post_meta($post_id, '_sssb_from_email', true),
+            'reply_to' => get_post_meta($post_id, '_sssb_from_email', true), // Use from_email as reply_to
             'subject' => get_the_title($post_id),
             'html_text' => get_post_field('post_content', $post_id),
             'plain_text' => get_post_meta($post_id, '_sssb_plain_text', true),
@@ -185,6 +198,130 @@ class SSSB_Core
             update_post_meta($post_id, '_sssb_sent_time', current_time('mysql'));
         }
     }
+
+    /**
+     * Check for overdue scheduled campaigns and show admin notice
+     */
+    public function check_overdue_campaigns()
+    {
+        $screen = get_current_screen();
+        if (!$screen || strpos($screen->id, 'sssb_campaign') === false) {
+            return;
+        }
+
+        // Check for overdue scheduled campaigns
+        $args = array(
+            'post_type' => 'sssb_campaign',
+            'post_status' => 'publish',
+            'meta_query' => array(
+                array(
+                    'key' => '_sssb_status',
+                    'value' => 'scheduled',
+                ),
+            ),
+            'posts_per_page' => -1,
+        );
+
+        $campaigns = get_posts($args);
+        $overdue = array();
+
+        foreach ($campaigns as $campaign) {
+            $scheduled_time = get_post_meta($campaign->ID, '_sssb_scheduled_time', true);
+            if ($scheduled_time && strtotime($scheduled_time) < current_time('timestamp')) {
+                $overdue[] = $campaign;
+            }
+        }
+
+        if (!empty($overdue)) {
+            foreach ($overdue as $campaign) {
+                $send_url = add_query_arg(array(
+                    'action' => 'sssb_manual_send',
+                    'campaign_id' => $campaign->ID,
+                    'nonce' => wp_create_nonce('sssb_manual_send_' . $campaign->ID)
+                ), admin_url('admin.php'));
+
+                echo '<div class="notice notice-warning is-dismissible">';
+                echo '<p><strong>Campaign Overdue:</strong> "' . esc_html($campaign->post_title) . '" was scheduled but hasn\'t sent yet (WP-Cron issue).</p>';
+                echo '<p><a href="' . esc_url($send_url) . '" class="button button-primary">Send Now</a></p>';
+                echo '</div>';
+            }
+        }
+
+        // Check for failed campaigns
+        $failed_args = array(
+            'post_type' => 'sssb_campaign',
+            'post_status' => 'publish',
+            'meta_query' => array(
+                array(
+                    'key' => '_sssb_status',
+                    'value' => 'failed',
+                ),
+            ),
+            'posts_per_page' => -1,
+        );
+
+        $failed_campaigns = get_posts($failed_args);
+
+        if (!empty($failed_campaigns)) {
+            foreach ($failed_campaigns as $campaign) {
+                $error = get_post_meta($campaign->ID, '_sssb_send_error', true);
+                $retry_url = add_query_arg(array(
+                    'action' => 'sssb_retry_send',
+                    'campaign_id' => $campaign->ID,
+                    'nonce' => wp_create_nonce('sssb_retry_send_' . $campaign->ID)
+                ), admin_url('admin.php'));
+
+                echo '<div class="notice notice-error is-dismissible">';
+                echo '<p><strong>Campaign Failed:</strong> "' . esc_html($campaign->post_title) . '"</p>';
+                if ($error) {
+                    echo '<p><strong>Error:</strong> ' . esc_html($error) . '</p>';
+                }
+                echo '<p><a href="' . esc_url($retry_url) . '" class="button button-primary">Retry Send</a></p>';
+                echo '</div>';
+            }
+        }
+    }
+
+    /**
+     * Handle manual send request
+     */
+    public function handle_manual_send()
+    {
+        $action = isset($_GET['action']) ? $_GET['action'] : '';
+        
+        if ($action !== 'sssb_manual_send' && $action !== 'sssb_retry_send') {
+            return;
+        }
+
+        if (!isset($_GET['campaign_id']) || !isset($_GET['nonce'])) {
+            return;
+        }
+
+        $campaign_id = intval($_GET['campaign_id']);
+        
+        $nonce_action = $action === 'sssb_retry_send' ? 'sssb_retry_send_' . $campaign_id : 'sssb_manual_send_' . $campaign_id;
+        
+        if (!wp_verify_nonce($_GET['nonce'], $nonce_action)) {
+            wp_die('Security check failed');
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        // Clear previous error if retrying
+        if ($action === 'sssb_retry_send') {
+            delete_post_meta($campaign_id, '_sssb_send_error');
+        }
+
+        // Trigger the send
+        $this->send_scheduled_campaign($campaign_id);
+
+        // Redirect back
+        wp_redirect(admin_url('edit.php?post_type=sssb_campaign&sent=1'));
+        exit;
+    }
+
 
     /**
      * Load text domain.

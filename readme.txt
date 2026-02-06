@@ -28,6 +28,8 @@ A powerful, visual newsletter builder for Sendy. Create beautiful, responsive ca
 *   **📅 Advanced Scheduling:** 
     *   Schedule campaigns to send at a specific future time.
     *   **Status Tracking:** Clear admin columns showing "Scheduled", "Sent", or "Draft" status.
+    *   **Error Handling:** Failed campaigns display error messages with one-click retry.
+    *   **Overdue Detection:** Automatic alerts for campaigns that didn't send due to WP-Cron issues.
 *   **✨ Polished UI:** 
     *   "Read More" buttons for consistent calls to action.
     *   Equal-height cards on desktop for a symmetrical, professional look.
@@ -58,4 +60,7 @@ Newsletter, Sendy, Amazon SES, Email Marketing, Post to Email, Visual Builder, D
 *   Feature: Visual Builder with Hero + Grid layout.
 *   Feature: Responsive Mobile Stacking.
 *   Feature: Sendy API Integration (Draft/Send/Schedule).
-*   Feature: Custom Admin Columns for Status.
+*   Feature: Custom Admin Columns for Status and Scheduled Time.
+*   Feature: Error Display Column for Failed Campaigns.
+*   Feature: One-Click Retry for Failed Campaigns.
+*   Feature: Automatic Detection of Overdue Scheduled Campaigns.

@@ -29,6 +29,9 @@ Create beautiful, responsive newsletters directly from your WordPress posts and 
     *   **Status Columns:** View `Draft`, `Sent`, or `Scheduled` status directly in the campaign list.
     *   **Scheduling:** Set a date/time for your campaign, and WP-Cron will trigger the send automatically.
     *   **Status Indicators:** Color-coded statuses (Green for Sent, Orange for Scheduled).
+    *   **Error Handling:** Failed campaigns show detailed error messages in a dedicated column.
+    *   **One-Click Retry:** Instantly retry failed campaigns with a single button click.
+    *   **Overdue Alerts:** Automatic warnings for scheduled campaigns that didn't send (WP-Cron issues).
 
 ### 🏷️ Keywords
 `Sendy` `Amazon SES` `Newsletter Builder` `Email Marketing` `WordPress Newsletter` `Drag and Drop` `Post to Email` `Responsive Email Template` `Email Automation` `Campaign Scheduler`
