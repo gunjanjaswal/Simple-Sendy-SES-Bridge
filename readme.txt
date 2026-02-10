@@ -103,3 +103,5 @@ This runs every 5 minutes to automatically process queued campaigns.
 *   Feature: Error Display Column for Failed Campaigns.
 *   Feature: One-Click Retry for Failed Campaigns.
 *   Feature: Automatic Detection and Sending of Overdue Scheduled Campaigns.
+*   Feature: Multi-list support with checkboxes (all lists selected by default).
+*   Fix: Properly parse pipe-separated list format (List Name|List ID) to extract IDs.

@@ -11,14 +11,11 @@ jQuery(document).ready(function ($) {
 
         let listHtml = '<label><strong>Choose your lists & segments</strong></label><div class="sssb-list-checkboxes" style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px; background: #fff; margin-top:5px;">';
 
-        // Check if there is a default list ID
-        const defaultListId = $listInput.val();
-
+        // Check all lists by default
         knownLists.forEach(list => {
-            const isChecked = list.id === defaultListId ? 'checked' : '';
             listHtml += `
                 <label style="display:block; margin-bottom: 5px;">
-                    <input type="checkbox" name="sssb_target_lists" value="${list.id}" ${isChecked}> ${list.name}
+                    <input type="checkbox" name="sssb_target_lists" value="${list.id}" checked> ${list.name}
                 </label>
             `;
         });
@@ -171,7 +168,17 @@ jQuery(document).ready(function ($) {
                     $selectedLists.each(function () { ids.push($(this).val()); });
                     return ids.join(',');
                 }
-                return $('#sssb-list-id').val();
+                // Fallback: parse pipe-separated format (List Name|List ID)
+                const rawValue = $('#sssb-list-id').val();
+                if (rawValue && rawValue.includes('|')) {
+                    const ids = rawValue.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.includes('|'))
+                        .map(line => line.split('|')[1].trim())
+                        .filter(id => id.length > 0);
+                    return ids.join(',');
+                }
+                return rawValue;
             })(),
             send_type: $('input[name="sssb_send_type"]:checked').val(),
             schedule_date: $('#sssb-schedule-datetime').val()
