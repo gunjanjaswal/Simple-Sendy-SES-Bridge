@@ -135,7 +135,7 @@ class SSSB_Sendy_API
         wp_remote_get($cron_url, array(
             'blocking' => false,
             'timeout' => 0.01,
-            'sslverify' => apply_filters('https_local_ssl_verify', false),
+            'sslverify' => apply_filters('sssb_cron_ssl_verify', false),
         ));
     }
 }
